@@ -1,4 +1,6 @@
 import json, re, os
+import multiprocessing as mp
+from itertools import islice
 
 # Matches HTTP/HTTPS links and www links
 URL_REGEX = re.compile(
@@ -24,11 +26,15 @@ _GARBAGE_WORD_RE = re.compile(r'\b\w{16,}\b')
 def is_latin_post(text: str, threshold: float = 0.85) -> bool:
     if not text or not isinstance(text, str):
         return True
-    letters_only = [c for c in text if c.isalpha()]
-    if not letters_only:
+    latin = total = 0
+    for c in text:
+        if c.isalpha():
+            total += 1
+            if ord(c) <= 0x024F: # checks if latin.
+                latin += 1
+    if not total:
         return True
-    latin_count = sum(1 for c in letters_only if ord(c) <= 0x024F) # checks if latin.
-    return (latin_count / len(letters_only)) >= threshold
+    return (latin / total) >= threshold
 
 # Translation table for single-char replacements (much faster than chained replace())
 _TRANS = str.maketrans({
@@ -87,13 +93,13 @@ def clean_text(text: str) -> str:
     # Replaces weird formats
     text = text.translate(_TRANS)
     # Step 2: Replace URLs with tag
-    text = URL_REGEX.sub('[EXTERNAL_LINK]', text)
+    text = URL_REGEX.sub('[URL]', text)
     
     # Step 3: Remove Hashtags from the body (since they are in the JSON array)
     text = HASHTAG_SYMBOL_REGEX.sub('', text)
     
     # Step 4: Remove exact UUIDs
-    text = UUID_REGEX.sub('[ID_HASH]', text)
+    text = UUID_REGEX.sub('[UUID]', text)
     
     # Step 5: Apply the Ratio Rule for remaining garbage strings
     text = _GARBAGE_WORD_RE.sub(_replace_garbage, text)
@@ -106,51 +112,90 @@ def clean_text(text: str) -> str:
     # Return stripped text
     return text.strip()
 
+def process_record(line: str):
+    """
+    Parse, filter, and clean one JSON line.
+    Returns cleaned JSON string, or None if the record should be skipped.
+    """
+    line = line.strip()
+    if not line:
+        return None
+    try:
+        record = json.loads(line)
+    except json.JSONDecodeError:
+        return None
 
-def process_data(input_path: str, output_path: str):
-    # Ensure output directory exists
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    
+    if not is_latin_post(record.get('article_body', '')):
+        return None
+
+    if record.get('article_body'):
+        record['article_body'] = clean_text(record['article_body'])
+
+    # comments = record.get('comments')
+    # if comments and isinstance(comments, list):
+    #     for comment in comments:
+    #         if comment.get('body'):
+    #             comment['body'] = clean_text(comment['body'])
+
+    filtered_record = {
+        "id": record.get("id"),
+        "article_body": record.get("article_body")
+    }
+
+    return json.dumps(filtered_record, ensure_ascii=False)
+
+def process_batch(lines):
+    """Process a list of raw lines; return list of cleaned JSON strings."""
+    results = []
+    for line in lines:
+        out = process_record(line)
+        if out is not None:
+            results.append(out)
+    return results
+
+def chunked(iterable, size):
+    """Yield successive chunks of `size` items from an iterable."""
+    it = iter(iterable)
+    while True:
+        chunk = list(islice(it, size))
+        if not chunk:
+            break
+        yield chunk # little memory for big data. avoid loading entire file into memory.
+
+def process_data(input_path: str, output_path: str, num_workers: int = None, chunk_size: int = 1000):
+    """
+    Parameters
+    ----------
+    input_path  : path to newline-delimited JSON input file
+    output_path : path to write cleaned output
+    num_workers : worker processes (defaults to CPU count)
+    chunk_size  : lines per task sent to each worker (tune for your data)
+    """
+    os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+
+    if num_workers is None:
+        num_workers = mp.cpu_count()
+
     processed_count = 0
-    
     print(f"Starting processing of {input_path}...")
-    
+    print(f"Using {num_workers} worker processes, chunk size {chunk_size}")
+
+    # Large write buffer (8 MB) reduces syscall overhead
     with open(input_path, 'r', encoding='utf-8') as infile, \
-         open(output_path, 'w', encoding='utf-8') as outfile:
-        
-        for line in infile:
-            if not line.strip():
-                continue
-                
-            try:
-                record = json.loads(line)
+         open(output_path, 'w', encoding='utf-8', buffering=8 * 1024 * 1024) as outfile, \
+         mp.Pool(processes=num_workers) as pool:
 
-                if not is_latin_post(record.get('article_body', '')):
-                    continue
-                
-                # 1. Clean the main article body
-                if record.get('article_body'):
-                    record['article_body'] = clean_text(record['article_body'])
-                
-                # 2. Clean the comments
-                if record.get('comments') and isinstance(record['comments'], list):
-                    for comment in record['comments']:
-                        if comment.get('body'):
-                            comment['body'] = clean_text(comment['body'])
-                            
-                # Write the cleaned JSON object back to the new file
-                outfile.write(json.dumps(record, ensure_ascii=False) + '\n')
-                processed_count += 1
-                
-                # Progress tracker
-                if processed_count % 10000 == 0:
-                    print(f"Processed {processed_count} records...")
-                    
-            except json.JSONDecodeError:
-                print("Warning: Skipped a malformed JSON line.")
-                continue
+        next_log = 10_000
+        for batch_results in pool.imap(process_batch, chunked(infile, chunk_size),
+                                       chunksize=4):
+            if batch_results:
+                outfile.write('\n'.join(batch_results) + '\n')
+                processed_count += len(batch_results)
+                if processed_count >= next_log:
+                    print(f"  Processed {processed_count:,} records...")
+                    next_log += 10_000
 
-    print(f"\n✅ Success! Cleaned {processed_count} records.")
+    print(f"\n✅ Success! Cleaned {processed_count:,} records.")
     print(f"Saved output to: {output_path}")
 
 
