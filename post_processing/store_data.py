@@ -1,6 +1,7 @@
-import json, urllib3, os
+import json, urllib3, os, asyncio
 from dotenv import load_dotenv
-from azure.cosmos import CosmosClient, PartitionKey, exceptions
+from azure.cosmos.aio import CosmosClient
+from azure.cosmos import PartitionKey, exceptions
 load_dotenv()
 
 # solve warning issue
@@ -13,23 +14,45 @@ class CosmosDBUploader:
         self.database_name = database_name
         self.container_name = container_name
 
-    def connect(self):
+        # tuning params
+        self.CONCURRENCY = 64
+        self.CHUNK_SIZE = 10000
+
+    async def connect(self):
         self.client = CosmosClient(
             self.url,
             credential=self.key,
             connection_verify=False,
+            enable_bulk=True
         )
-        self.database = self.client.create_database_if_not_exists(
+        self.database =await self.client.create_database_if_not_exists(
             id=self.database_name
         )
 
-        self.container = self.database.create_container_if_not_exists(
+        self.container =await self.database.create_container_if_not_exists(
             id=self.container_name,
             partition_key=PartitionKey(path="/date_published"),
-            offer_throughput=10000 # request unit persec
+            offer_throughput=10000, # request unit persec
+            unique_key_policy={
+                "uniqueKeys": [
+                    {"paths": ["id"]}
+                ]
+            }
         )
+    
+    async def _upsert_with_semaphore(self, record, sem, stats):
+        async with sem:
+            try:
+                await self.container.upsert_item(record)
+                stats["ok"] += 1
+            except exceptions.CosmosHttpResponseError as e:
+                stats["fail"] += 1
+                print(f"✗ Failed {record.get('id')}: {e.status_code} {e.message}")
 
-    def upload_file(self, file_path):
+    async def upload_file(self, file_path):
+        sem = asyncio.Semaphore(self.CONCURRENCY)
+        stats = {"ok": 0, "fail": 0}
+        tasks = []
 
         with open(file_path, 'r', encoding='utf-8') as f:
             for line in f:
@@ -40,14 +63,27 @@ class CosmosDBUploader:
                 record['id'] = str(record['id'])
                 record['date_published'] = str(record['date_published'])
 
-                try:
-                    self.container.upsert_item(record)
-                except exceptions.CosmosHttpResponseError as e:
-                    print(f"Failed to insert {record['id']}: {e}")
+                tasks.append(
+                    asyncio.create_task(
+                        self._upsert_with_semaphore(record, sem, stats)
+                    )
+                )
+
+                # chunk flush
+                if len(tasks) >= self.CHUNK_SIZE:
+                    await asyncio.gather(*tasks)
+                    tasks.clear()
+                    print(f"↑ Uploaded {stats['ok']:,} records so far…")
+
+        if tasks:
+            await asyncio.gather(*tasks)
                     
         print("Uploaded")
 
-if __name__ == "__main__":
+    async def close(self):
+        await self.client.close()
+
+async def main():
 
     URL = os.getenv("COSMOS_URL")
     KEY = os.getenv("COSMOS_KEY")
@@ -56,5 +92,10 @@ if __name__ == "__main__":
     INPUT_FILE = "./cleaned_output.json"
 
     uploader = CosmosDBUploader(URL, KEY, DATABASE_NAME, CONTAINER_NAME)
-    uploader.connect()
-    uploader.upload_file(INPUT_FILE)
+    await uploader.connect()
+    print(f"Uploading {INPUT_FILE} with concurrency={uploader.CONCURRENCY}…")
+    await uploader.upload_file(INPUT_FILE)
+    await uploader.close()
+
+if __name__ == "__main__":
+    asyncio.run(main())
