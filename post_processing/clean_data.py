@@ -139,7 +139,8 @@ def process_record(line: str):
 
     filtered_record = {
         "id": record.get("id"),
-        "article_body": record.get("article_body")
+        "article_body": record.get("article_body"),
+        "date_published" : record.get("date_published")
     }
 
     return json.dumps(filtered_record, ensure_ascii=False)
