@@ -25,7 +25,7 @@ class CosmosDBUploader:
 
         self.container = self.database.create_container_if_not_exists(
             id=self.container_name,
-            partition_key=PartitionKey(path="/id"),
+            partition_key=PartitionKey(path="/date_published"),
             offer_throughput=10000 # request unit persec
         )
 
@@ -38,6 +38,7 @@ class CosmosDBUploader:
                     continue
                 record = json.loads(line)
                 record['id'] = str(record['id'])
+                record['date_published'] = str(record['date_published'])
 
                 try:
                     self.container.upsert_item(record)
