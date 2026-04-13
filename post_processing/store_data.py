@@ -23,7 +23,9 @@ class CosmosDBUploader:
             self.url,
             credential=self.key,
             connection_verify=False,
-            enable_bulk=True
+            enable_bulk=True,
+            retry_total=30, 
+            retry_backoff_max=120
         )
         self.database =await self.client.create_database_if_not_exists(
             id=self.database_name
