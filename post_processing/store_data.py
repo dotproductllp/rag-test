@@ -1,7 +1,8 @@
 import json, urllib3, os, asyncio
 from dotenv import load_dotenv
 from azure.cosmos.aio import CosmosClient
-from azure.cosmos import PartitionKey, exceptions
+from azure.cosmos import PartitionKey
+from openai import AsyncOpenAI
 load_dotenv()
 
 # solve warning issue
@@ -15,8 +16,10 @@ class CosmosDBUploader:
         self.container_name = container_name
 
         # tuning params
-        self.CONCURRENCY = 64
+        self.CONCURRENCY = 32
         self.CHUNK_SIZE = 10000
+
+        self.openai_client = AsyncOpenAI()
 
     async def connect(self):
         self.client = CosmosClient(
@@ -40,9 +43,16 @@ class CosmosDBUploader:
     async def _upsert_with_semaphore(self, record, sem, stats):
         async with sem:
             try:
+                text = record.get('article_body')
+                if text:
+                    res = await self.openai_client.embeddings.create(
+                        input=text,
+                        model="text-embedding-3-small"
+                    )
+                    record['embedding'] = res.data[0].embedding
                 await self.container.upsert_item(record)
                 stats["ok"] += 1
-            except exceptions.CosmosHttpResponseError as e:
+            except Exception as e:
                 stats["fail"] += 1
                 print(f"✗ Failed {record.get('id')}: {e.status_code} {e.message}")
 
@@ -79,13 +89,14 @@ class CosmosDBUploader:
 
     async def close(self):
         await self.client.close()
+        await self.openai_client.close()
 
 async def main():
 
     URL = os.getenv("COSMOS_URL")
     KEY = os.getenv("COSMOS_KEY")
     DATABASE_NAME = "Coresignal_linkedin"
-    CONTAINER_NAME = "CleanedPosts"
+    CONTAINER_NAME = "CleanedPostsWithEmbeddingsTest"
     INPUT_FILE = "./cleaned_output.json"
 
     uploader = CosmosDBUploader(URL, KEY, DATABASE_NAME, CONTAINER_NAME)

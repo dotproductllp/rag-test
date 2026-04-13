@@ -23,6 +23,12 @@ UUID_REGEX = re.compile(r'\b[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F
 # tokens that are >15 chars
 _GARBAGE_WORD_RE = re.compile(r'\b\w{16,}\b')
 
+# removing some noted charachters that cause embediing issues.
+BAD_CHARS_REGEX = re.compile(r'[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\x9f\ud800-\udfff]')
+
+# Matches Zero-Width spaces and Byte Order Marks
+ZERO_WIDTH_REGEX = re.compile(r'[\u200B-\u200D\uFEFF]')
+
 def is_latin_post(text: str, threshold: float = 0.85) -> bool:
     if not text or not isinstance(text, str):
         return True
@@ -108,6 +114,11 @@ def clean_text(text: str) -> str:
     text = WHITESPACE_REGEX.sub(' ', text)
 
     text = EMAIL_REGEX.sub('[EMAIL]', text)
+
+    text = BAD_CHARS_REGEX.sub('', text)
+
+    # Remove zero-width spaces (often causes OpenAI JSON parsing errors)
+    text = ZERO_WIDTH_REGEX.sub('', text)
     
     # Return stripped text
     return text.strip()
