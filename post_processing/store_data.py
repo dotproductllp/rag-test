@@ -33,11 +33,6 @@ class CosmosDBUploader:
             id=self.container_name,
             partition_key=PartitionKey(path="/date_published"),
             offer_throughput=10000, # request unit persec
-            unique_key_policy={
-                "uniqueKeys": [
-                    {"paths": ["id"]}
-                ]
-            }
         )
     
     async def _upsert_with_semaphore(self, record, sem, stats):
