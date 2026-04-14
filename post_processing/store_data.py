@@ -34,10 +34,33 @@ class CosmosDBUploader:
             id=self.database_name
         )
 
+        vector_embedding_policy = {
+            "vectorEmbeddings": [
+                {
+                    "path": "/embedding",
+                    "dataType": "float32",
+                    "distanceFunction": "cosine",
+                    "dimensions": 1536
+                }
+            ]
+        }
+        indexing_policy = {
+            "includedPaths": [{"path": "/*"}],
+            "excludedPaths": [{"path": "/\"_etag\"/?"}],
+            "vectorIndexes": [
+                {
+                    "path": "/embedding",
+                    "type": "diskANN"
+                }
+            ]
+        }
+
         self.container =await self.database.create_container_if_not_exists(
             id=self.container_name,
             partition_key=PartitionKey(path="/date_published"),
-            offer_throughput=10000, # request unit persec
+            offer_throughput=10000, # max request unit persec
+            vector_embedding_policy=vector_embedding_policy,
+            indexing_policy=indexing_policy,
         )
     
     async def _upsert_with_semaphore(self, record, sem, stats):
@@ -96,7 +119,7 @@ async def main():
     URL = os.getenv("COSMOS_URL")
     KEY = os.getenv("COSMOS_KEY")
     DATABASE_NAME = "Coresignal_linkedin"
-    CONTAINER_NAME = "CleanedPostsWithEmbeddingsTest"
+    CONTAINER_NAME = "PostEmbeddings"
     INPUT_FILE = "./cleaned_output.json"
 
     uploader = CosmosDBUploader(URL, KEY, DATABASE_NAME, CONTAINER_NAME)
