@@ -1,5 +1,6 @@
 .env
 .venv/
+venv/
 __pycache__/
 linkedin-posts/part-00000-cdd8d172-4e8c-4f51-a941-475ee8444692-c000.json
 linkedin-posts/part-00001-cdd8d172-4e8c-4f51-a941-475ee8444692-c000.json
