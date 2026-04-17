@@ -1,7 +1,7 @@
-import orjson, urllib3, os, time
+import orjson, urllib3, os, cProfile, pstats, io
 from tqdm import tqdm
 from dotenv import load_dotenv
-from azure.cosmos import CosmosClient, PartitionKey
+from azure.cosmos.aio import CosmosClient, PartitionKey
 from openai import OpenAI
 load_dotenv()
 
@@ -19,7 +19,7 @@ class CosmosDBUploader:
         self.client = CosmosClient(
             self.url,
             credential=self.key,
-            connection_verify=False,
+            connection_verify=False,  
         )
         self.database = self.client.create_database_if_not_exists(
             id=self.database_name
@@ -76,7 +76,7 @@ class CosmosDBUploader:
         with open(file_path, 'rb') as f:
             data = orjson.loads(f.read())
 
-        for record in tqdm(data, desc="Uploading"):
+        for record in tqdm(data[:10], desc="Uploading"):
             record['id'] = str(record['id'])
             record['date_published'] = str(record['date_published'])
             self._upsert_record(record, stats)
@@ -84,7 +84,6 @@ class CosmosDBUploader:
         n = stats["ok"] or 1
 
     def close(self):
-        self.client.close()
         self.openai_client.close()
 
 def main():
@@ -101,4 +100,12 @@ def main():
     uploader.close()
 
 if __name__ == "__main__":
+    pr = cProfile.Profile()
+    pr.enable()
     main()
+    pr.disable()
+
+    s = io.StringIO()
+    ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
+    ps.print_stats(20)
+    print(s.getvalue())
