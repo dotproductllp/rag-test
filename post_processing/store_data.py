@@ -1,7 +1,8 @@
-import orjson, urllib3, os, cProfile, pstats, io
+import orjson, urllib3, os, asyncio, cProfile, pstats, io
 from tqdm import tqdm
 from dotenv import load_dotenv
-from azure.cosmos import CosmosClient, PartitionKey
+from azure.cosmos.aio import CosmosClient #, PartitionKey
+from azure.cosmos import PartitionKey
 from openai import OpenAI
 load_dotenv()
 
@@ -15,13 +16,13 @@ class CosmosDBUploader:
         self.container_name = container_name
         self.openai_client = OpenAI()
 
-    def connect(self):
+    async def connect(self):
         self.client = CosmosClient(
             self.url,
             credential=self.key,
             connection_verify=False,  
         )
-        self.database = self.client.create_database_if_not_exists(
+        self.database = await self.client.create_database_if_not_exists(
             id=self.database_name
         )
 
@@ -46,7 +47,7 @@ class CosmosDBUploader:
             ]
         }
 
-        self.container = self.database.create_container_if_not_exists(
+        self.container = await self.database.create_container_if_not_exists(
             id=self.container_name,
             partition_key=PartitionKey(path="/date_published"),
             offer_throughput=10000,
@@ -54,7 +55,7 @@ class CosmosDBUploader:
             indexing_policy=indexing_policy,
         )
 
-    def _upsert_record(self, record, stats):
+    async def _upsert_record(self, record, stats):
         try:
             text = record.get('article_body')
             if text:
@@ -64,13 +65,13 @@ class CosmosDBUploader:
                 )
                 record['embedding'] = res.data[0].embedding
 
-            self.container.upsert_item(record)
+            await self.container.upsert_item(record)
             stats["ok"] += 1
         except Exception as e:
             stats["fail"] += 1
             print(f"✗ Failed {record.get('id')}: {e}")
 
-    def upload_file(self, file_path):
+    async def upload_file(self, file_path):
         stats = {"ok": 0, "fail": 0}
 
         with open(file_path, 'rb') as f:
@@ -79,14 +80,14 @@ class CosmosDBUploader:
         for record in tqdm(data[:10], desc="Uploading"):
             record['id'] = str(record['id'])
             record['date_published'] = str(record['date_published'])
-            self._upsert_record(record, stats)
+            await self._upsert_record(record, stats)
 
         n = stats["ok"] or 1
 
     def close(self):
         self.openai_client.close()
 
-def main():
+async def main():
     URL = os.getenv("COSMOS_URL")
     KEY = os.getenv("COSMOS_KEY")
     DATABASE_NAME = "Coresignal_linkedin"
@@ -94,15 +95,15 @@ def main():
     INPUT_FILE = "../data/base.json"
 
     uploader = CosmosDBUploader(URL, KEY, DATABASE_NAME, CONTAINER_NAME)
-    uploader.connect()
+    await uploader.connect()
     print(f"Uploading {INPUT_FILE}…")
-    uploader.upload_file(INPUT_FILE)
+    await uploader.upload_file(INPUT_FILE)
     uploader.close()
 
 if __name__ == "__main__":
     pr = cProfile.Profile()
     pr.enable()
-    main()
+    asyncio.run(main())
     pr.disable()
 
     s = io.StringIO()
