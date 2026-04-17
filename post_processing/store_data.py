@@ -1,7 +1,7 @@
 import orjson, urllib3, os, cProfile, pstats, io
 from tqdm import tqdm
 from dotenv import load_dotenv
-from azure.cosmos.aio import CosmosClient, PartitionKey
+from azure.cosmos import CosmosClient, PartitionKey
 from openai import OpenAI
 load_dotenv()
 
