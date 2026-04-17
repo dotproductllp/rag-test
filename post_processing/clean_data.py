@@ -213,7 +213,7 @@ def process_data(input_path: str, output_path: str, num_workers: int = None, chu
 
 if __name__ == "__main__":
     # Setup paths relative to the script location
-    INPUT_FILE = "real_data/part-00000-cdd8d172-4e8c-4f51-a941-475ee8444692-c000.json"
-    OUTPUT_FILE = "./cleaned_output.json"
+    INPUT_FILE = "../data/part-0.json"
+    OUTPUT_FILE = "../data/cleaned_output.json"
     
     process_data(INPUT_FILE, OUTPUT_FILE)
