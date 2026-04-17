@@ -31,8 +31,15 @@ BAD_CHARS_REGEX = re.compile(r'[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\x9f\ud800-\udff
 ZERO_WIDTH_REGEX = re.compile(r'[\u200B-\u200D\uFEFF]')
 
 def is_latin_post(text: str, threshold: float = 0.85) -> bool:
-    total = len(text)
+    if not text or not isinstance(text, str):
+        return True
+
+    total = sum(c.isalpha() for c in text)
     latin = len(_LATIN_ALPHA_RE.findall(text))
+
+    if total == 0: # Prevents emoji-only / symbol-only posts from passing
+        return False
+
     return (latin / total) >= threshold
 
 # Translation table for single-char replacements (much faster than chained replace())
