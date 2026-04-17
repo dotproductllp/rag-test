@@ -4,7 +4,8 @@ venv/
 __pycache__/
 linkedin-posts/part-00000-cdd8d172-4e8c-4f51-a941-475ee8444692-c000.json
 linkedin-posts/part-00001-cdd8d172-4e8c-4f51-a941-475ee8444692-c000.json
-post_processing/real_data/part-00000-cdd8d172-4e8c-4f51-a941-475ee8444692-c000.json
-post_processing/real_data/part-00001-cdd8d172-4e8c-4f51-a941-475ee8444692-c000.json
+post_processing/data/*
 post_processing/cleaned_output.json
 post_processing/post.json
+data/*
+output/*
