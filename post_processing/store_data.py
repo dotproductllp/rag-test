@@ -1,4 +1,5 @@
-import json, urllib3, os, asyncio
+import orjson, urllib3, os, asyncio, time
+from tqdm import tqdm
 from dotenv import load_dotenv
 from azure.cosmos.aio import CosmosClient
 from azure.cosmos import PartitionKey
@@ -68,12 +69,17 @@ class CosmosDBUploader:
             try:
                 text = record.get('article_body')
                 if text:
+                    t0 = time.perf_counter()
                     res = await self.openai_client.embeddings.create(
                         input=text,
                         model="text-embedding-3-small"
                     )
+                    stats["embed_time"] += time.perf_counter() - t0
                     record['embedding'] = res.data[0].embedding
+
+                t0 = time.perf_counter()
                 await self.container.upsert_item(record)
+                stats["upsert_time"] += time.perf_counter() - t0
                 stats["ok"] += 1
             except Exception as e:
                 stats["fail"] += 1
@@ -81,15 +87,13 @@ class CosmosDBUploader:
 
     async def upload_file(self, file_path):
         sem = asyncio.Semaphore(self.CONCURRENCY)
-        stats = {"ok": 0, "fail": 0}
+        stats = {"ok": 0, "fail": 0, "embed_time": 0.0, "upsert_time": 0.0}
         tasks = []
+        t_total = time.perf_counter()
 
-        with open(file_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                record = json.loads(line)
+        with open(file_path, 'rb') as f:
+            data = orjson.loads(f.read())
+            for record in tqdm(data, desc="Uploading"):
                 record['id'] = str(record['id'])
                 record['date_published'] = str(record['date_published'])
 
@@ -107,8 +111,17 @@ class CosmosDBUploader:
 
         if tasks:
             await asyncio.gather(*tasks)
-                    
-        print("Uploaded")
+
+        total = time.perf_counter() - t_total
+        n = stats["ok"] or 1
+        print(f"\n--- Profile ---")
+        print(f"Total time   : {total:.1f}s")
+        print(f"Embed time   : {stats['embed_time']:.1f}s  ({stats['embed_time']/total*100:.1f}%)")
+        print(f"Upsert time  : {stats['upsert_time']:.1f}s  ({stats['upsert_time']/total*100:.1f}%)")
+        print(f"Records ok   : {stats['ok']:,}  |  failed: {stats['fail']:,}")
+        print(f"Avg embed/rec: {stats['embed_time']/n*1000:.1f}ms")
+        print(f"Avg upsert/rec: {stats['upsert_time']/n*1000:.1f}ms")
+        print(f"Throughput   : {n/total:.1f} records/s")
 
     async def close(self):
         await self.client.close()
@@ -120,7 +133,7 @@ async def main():
     KEY = os.getenv("COSMOS_KEY")
     DATABASE_NAME = "Coresignal_linkedin"
     CONTAINER_NAME = "PostEmbeddings"
-    INPUT_FILE = "./cleaned_output.json"
+    INPUT_FILE = "../data/base.json"
 
     uploader = CosmosDBUploader(URL, KEY, DATABASE_NAME, CONTAINER_NAME)
     await uploader.connect()
