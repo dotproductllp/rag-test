@@ -144,7 +144,13 @@ def process_data(input_path: str, output_path: str):
     output = []
     with open(input_path, 'rb') as infile, open(output_path, 'wb') as outfile:
         records = orjson.loads(infile.read())
+        seen = set()
         for record in tqdm(records, desc="Cleaning"):
+            key = hash(record.get("article_body")[:150].lower().strip()) # hash used for smallerm emory, faster comparison.
+            if key in seen:
+                continue
+            else:
+                seen.add(key)
             data = process_record(record)
             if data:
                 output.append(data)
