@@ -6,7 +6,7 @@ from openai import OpenAI
 load_dotenv()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-class HybridSearcher:
+class HybridSearch:
     def __init__(self):
         self.openai = OpenAI()
         self.client = CosmosClient(
@@ -14,7 +14,7 @@ class HybridSearcher:
             credential=os.getenv("COSMOS_KEY"),
             connection_verify=False
         )
-        self.container = self.client.get_database_client("Coresignal_linkedin").get_container_client("PostEmbeddings")
+        self.container = self.client.get_database_client("Coresignal_linkedin").get_container_client("VectorEmbeddings")
 
     def perform_hybrid_search(self, semantic_query: str, required_keywords: list = None, top_k: int = 10):
         # 1. Get Query Embedding
@@ -57,7 +57,7 @@ class HybridSearcher:
         return results
 
 if __name__ == "__main__":
-    searcher = HybridSearcher()
+    searcher = HybridSearch()
     
     # Test
     searcher.perform_hybrid_search(
