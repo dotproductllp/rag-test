@@ -1,7 +1,7 @@
 import orjson, urllib3, os, asyncio, cProfile, pstats, io
 from tqdm import tqdm
 from dotenv import load_dotenv
-from azure.cosmos.aio import CosmosClient #, PartitionKey
+from azure.cosmos.aio import CosmosClient
 from azure.cosmos import PartitionKey
 from openai import OpenAI
 load_dotenv()
@@ -57,14 +57,6 @@ class CosmosDBUploader:
 
     async def _upsert_record(self, record, stats):
         try:
-            text = record.get('article_body')
-            if text:
-                res = self.openai_client.embeddings.create(
-                    input=text,
-                    model="text-embedding-3-small"
-                )
-                record['embedding'] = res.data[0].embedding
-
             await self.container.upsert_item(record)
             stats["ok"] += 1
         except Exception as e:
@@ -77,22 +69,37 @@ class CosmosDBUploader:
         with open(file_path, 'rb') as f:
             data = orjson.loads(f.read())
 
-        for record in tqdm(data[:10], desc="Uploading"):
-            record['id'] = str(record['id'])
-            record['date_published'] = str(record['date_published'])
-            await self._upsert_record(record, stats)
+        BATCH_SIZE = 120
 
-        n = stats["ok"] or 1
+        for i in tqdm(range(0, len(data), BATCH_SIZE), desc="Uploading"):
+            batch = data[i:i+BATCH_SIZE]
+            for record in batch:
+                record['id'] = str(record['id'])
+                record['date_published'] = str(record['date_published'])
+
+            texts = [r.get("article_body") for r in batch]
+
+            res = self.openai_client.embeddings.create(
+                input=texts,
+                model="text-embedding-3-small"
+            )
+            for record, emb in zip(batch, res.data):
+                record["embedding"] = emb.embedding
+
+            await asyncio.gather(
+                *(self._upsert_record(r, stats) for r in batch)
+            )
 
     def close(self):
         self.openai_client.close()
+        self.client.close()
 
 async def main():
     URL = os.getenv("COSMOS_URL")
     KEY = os.getenv("COSMOS_KEY")
     DATABASE_NAME = "Coresignal_linkedin"
-    CONTAINER_NAME = "PostEmbeddings"
-    INPUT_FILE = "../data/base.json"
+    CONTAINER_NAME = "VectorEmbeddings"
+    INPUT_FILE = "../data/cleaned_output.json"
 
     uploader = CosmosDBUploader(URL, KEY, DATABASE_NAME, CONTAINER_NAME)
     await uploader.connect()
