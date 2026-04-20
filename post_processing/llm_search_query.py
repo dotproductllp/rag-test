@@ -64,7 +64,7 @@ class QueryGenerator:
         }
         """
 
-    def generate_plan(self, user_prompt: str) -> dict:
+    def generate_query_keyword(self, user_prompt: str) -> dict:
 
         print(f"Analyzing prompt: '{user_prompt}'...\n")
         
@@ -93,7 +93,7 @@ if __name__ == "__main__":
         user_prompt = input("\nEnter your prompt (or type 'exit' to quit): ")
         if user_prompt.lower() == "exit":
             break
-        plan = analyzer.generate_plan(user_prompt)
+        plan = analyzer.generate_query_keyword(user_prompt)
         print(f"\nUser Prompt   : {user_prompt}")
         print(f"Semantic Query: {plan['search_query']}")
         print(f"Keywords      : {plan['keywords']}")
