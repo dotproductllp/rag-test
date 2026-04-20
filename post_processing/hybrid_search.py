@@ -27,7 +27,7 @@ class HybridSearcher:
         query = "SELECT TOP @limit c.id, c.article_body, VectorDistance(c.embedding, @vector) AS score FROM c"
         parameters = [
             {"name": "@vector", "value": query_vector},
-            {"name": "@limit", "value": top_k * 4}
+            {"name": "@limit", "value": top_k}
         ]
 
         # 3. Dynamically add multiple Keyword Filters (if provided)
@@ -43,27 +43,18 @@ class HybridSearcher:
 
         query += " ORDER BY VectorDistance(c.embedding, @vector)"
 
-        # 4. Execute Query & Deduplicate
-        raw_results = list(self.container.query_items(
+        # 4. Execute Query
+        results = list(self.container.query_items(
             query=query, parameters=parameters,
             enable_cross_partition_query=True
         ))
-        unique_results, seen = [], set()
-
-        for res in raw_results:
-            fingerprint = res.get('article_body', '')[:150].lower()
-            if fingerprint and fingerprint not in seen:
-                seen.add(fingerprint)
-                unique_results.append(res)
-            if len(unique_results) == top_k:
-                break
         
         # 5. Print Results
         print(f"\n{'='*50}\nRESULTS FOR: '{semantic_query}'\n{'='*50}")
-        for i, res in enumerate(unique_results):
+        for i, res in enumerate(results):
             print(f"{i+1}. [ID: {res['id']}] [Score: {res.get('score', 0):.4f}]\n{res['article_body'][:3000]}\n")
 
-        return unique_results
+        return results
 
 if __name__ == "__main__":
     searcher = HybridSearcher()
