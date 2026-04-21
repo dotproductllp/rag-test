@@ -3,11 +3,13 @@ from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
 from llm_search_query import QueryGenerator, INVALID_QUERY_MARKER
 from hybrid_search import HybridSearch
+from generate_post import PostGenerator
 
 load_dotenv()
 
 query_generator = QueryGenerator()
 hybrid_search = HybridSearch()
+post_generator = PostGenerator()
 
 class SearchResult(TypedDict):
     id: str
@@ -21,6 +23,7 @@ class WorkflowState(TypedDict):
     is_valid: bool
     invalid_reason: Optional[str]
     search_results: List[SearchResult]
+    generated_post: Optional[str]
 
 def get_input_node(state: WorkflowState) -> WorkflowState:
     """Fetch prompt from the user. On retry show the reason."""
@@ -104,7 +107,14 @@ def hybrid_search_node(state: WorkflowState) -> WorkflowState:
     return {**state, "search_results": extracted_posts}
 
 def generate_post_node(state: WorkflowState) -> WorkflowState:
-    pass
+    """Passes user prompt and search results to the LLM to generate the final post."""
+
+    generated_content = post_generator.generate_post(
+        user_prompt=state["user_prompt"],
+        search_results=state["search_results"]
+    )
+    print(generated_content)
+    return {**state, "generated_post": generated_content}
 
 
 def route_after_analyze(state: WorkflowState) -> Literal["get_input", "hybrid_search", "__end__"]:
@@ -151,6 +161,7 @@ if __name__ == "__main__":
         "is_valid": False,
         "invalid_reason": None,
         "search_results": [],
+        "generated_post": None,
     }
 
     final_state = app.invoke(initial_state, config={"recursion_limit": 100})
