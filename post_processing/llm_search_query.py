@@ -39,7 +39,7 @@ class QueryGenerator:
         
         CRITICAL RULES FOR KEYWORDS:
         - ONLY extract absolute deal-breakers. These will be used in a strict SQL `CONTAINS` clause.
-        - GOOD keywords: Brand names ("Apple", "Microsoft"), Specific Years ("2025"), Proper Nouns ("Elon Musk"), Place names ("Delhi").
+        - GOOD keywords: Brand names ("Apple", "Microsoft"), Specific Years ("2025"), Months ("November"), Proper Nouns ("Elon Musk"), Place ("Delhi"), or region ("Middle east") names.
         - BAD keywords: Concepts, verbs, or general topics ("coding", "strategy", "advice", "AI", "marketing"). 
           Using these as keywords will cause false negatives! A post might say "Artificial Intelligence" instead of "AI", 
           or "planning" instead of "strategy", which the vector search would catch, but a strict keyword filter would reject.
