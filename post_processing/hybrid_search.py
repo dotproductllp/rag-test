@@ -16,7 +16,7 @@ class HybridSearch:
         )
         self.container = self.client.get_database_client("Coresignal_linkedin").get_container_client("VectorEmbeddings")
 
-    def perform_hybrid_search(self, semantic_query: str, required_keywords: list = None, top_k: int = 10):
+    def perform_hybrid_search(self, semantic_query: str, required_keywords: list = None, top_k: int = 5):
         # 1. Get Query Embedding
         query_vector = self.openai.embeddings.create(
             input=semantic_query,
@@ -62,5 +62,5 @@ if __name__ == "__main__":
     # Test
     searcher.perform_hybrid_search(
         semantic_query="Dubai real estate market in 2026, property market trends, housing and commercial real estate outlook, investment opportunities, prices, demand, supply, development activity, rental market, off-plan projects, market forecast, United Arab Emirates property sector",
-        required_keywords=['Dubai', '2026'] # keep empty array for pure vector searching.
+        required_keywords=[] # keep empty array for pure vector searching.
     )

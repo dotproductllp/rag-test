@@ -92,7 +92,7 @@ def hybrid_search_node(state: WorkflowState) -> WorkflowState:
     results = hybrid_search.perform_hybrid_search(
         semantic_query=state["search_query"],
         required_keywords=state["keywords"],
-        top_k=10,
+        top_k=5,
     )
 
     extracted_posts: List[SearchResult] = [
