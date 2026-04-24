@@ -98,7 +98,7 @@ def hybrid_search_node(state: WorkflowState) -> WorkflowState:
     extracted_posts: List[SearchResult] = [
         {
             "id": r["id"],
-            "score": float(r.get("score")),
+            "score": float(r.get("score") or 0.0),
             "article_body": r.get("article_body"),
         }
         for r in results
