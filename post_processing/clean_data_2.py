@@ -132,7 +132,9 @@ def process_record(record: str):
     filtered_record = {
         "id": record.get("id"),
         "article_body": record.get("article_body"),
-        "date_published" : record.get("date_published")
+        "date_published" : record.get("date_published"),
+        "reaction_count" : record.get("reaction_count"),
+        "comment_count" : record.get("comment_count")
     }
 
     return filtered_record

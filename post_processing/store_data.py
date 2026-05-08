@@ -3,18 +3,22 @@ from tqdm import tqdm
 from dotenv import load_dotenv
 from azure.cosmos.aio import CosmosClient
 from azure.cosmos import PartitionKey
-from openai import OpenAI
+from openai import AzureOpenAI
 load_dotenv()
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class CosmosDBUploader:
-    def __init__(self, url, key, database_name, container_name):
+    def __init__(self, url, key, database_name, container_name, azure_openai_endpoint, azure_openai_key):
         self.url = url
         self.key = key
         self.database_name = database_name
         self.container_name = container_name
-        self.openai_client = OpenAI()
+        self.openai_client = AzureOpenAI(
+            api_version="2024-02-01",
+            azure_endpoint=azure_openai_endpoint,
+            api_key=azure_openai_key
+        )
 
     async def connect(self):
         self.client = CosmosClient(
@@ -44,15 +48,30 @@ class CosmosDBUploader:
                     "path": "/embedding",
                     "type": "diskANN"
                 }
+            ],
+            "fullTextIndexes": [
+                {
+                    "path": "/article_body"
+                }
+            ]
+        }
+        full_text_policy = {
+            "defaultLanguage": "en-US",
+            "fullTextPaths": [
+                {
+                    "path": "/article_body",
+                    "language": "en-US"
+                }
             ]
         }
 
         self.container = await self.database.create_container_if_not_exists(
             id=self.container_name,
             partition_key=PartitionKey(path="/date_published"),
-            offer_throughput=10000,
+            # offer_throughput=10000, # comment if DB is serverless
             vector_embedding_policy=vector_embedding_policy,
             indexing_policy=indexing_policy,
+            full_text_policy=full_text_policy,
         )
 
     async def _upsert_record(self, record, stats):
@@ -97,11 +116,14 @@ class CosmosDBUploader:
 async def main():
     URL = os.getenv("COSMOS_URL")
     KEY = os.getenv("COSMOS_KEY")
+    AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
+    AZURE_OPENAI_KEY = os.getenv("AZURE_OPENAI_KEY")
+
     DATABASE_NAME = "Coresignal_linkedin"
-    CONTAINER_NAME = "VectorEmbeddings"
+    CONTAINER_NAME = "VectorEmbeddings2"
     INPUT_FILE = "../data/cleaned_output.json"
 
-    uploader = CosmosDBUploader(URL, KEY, DATABASE_NAME, CONTAINER_NAME)
+    uploader = CosmosDBUploader(URL, KEY, DATABASE_NAME, CONTAINER_NAME, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_KEY)
     await uploader.connect()
     print(f"Uploading {INPUT_FILE}…")
     await uploader.upload_file(INPUT_FILE)
