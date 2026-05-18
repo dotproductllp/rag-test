@@ -1,20 +1,24 @@
 import os, urllib3
 from dotenv import load_dotenv
 from azure.cosmos import CosmosClient
-from openai import OpenAI
+from openai import AzureOpenAI
 
 load_dotenv()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class HybridSearch:
     def __init__(self):
-        self.openai = OpenAI()
+        self.openai = AzureOpenAI(
+            api_version="2024-02-01",
+            azure_endpoint=os.getenv("AZURE_OPENAI_EMBEDDING_ENDPOINT"),
+            api_key=os.getenv("AZURE_OPENAI_EMBEDDING_KEY")
+        )
         self.client = CosmosClient(
             os.getenv("COSMOS_URL"),
             credential=os.getenv("COSMOS_KEY"),
             connection_verify=False
         )
-        self.container = self.client.get_database_client("Coresignal_linkedin").get_container_client("VectorEmbeddings")
+        self.container = self.client.get_database_client("Coresignal_linkedin").get_container_client("VectorEmbeddings2")
 
     def perform_hybrid_search(self, semantic_query: str, required_keywords: list = None, top_k: int = 5):
         # 1. Get Query Embedding
@@ -46,7 +50,9 @@ class HybridSearch:
                 SELECT TOP @limit 
                     c.id, 
                     c.article_body, 
-                    VectorDistance(c.embedding, @vector) AS score
+                    c.reaction_count, 
+                    c.comment_count, 
+                    VectorDistance(c.embedding, @vector) AS distance
                 FROM c 
                 ORDER BY RANK RRF(
                     VectorDistance(c.embedding, @vector), 
@@ -57,7 +63,7 @@ class HybridSearch:
         else:
             # Pure Vector Search fallback
             query = """
-                SELECT TOP @limit c.id, c.article_body, VectorDistance(c.embedding, @vector) AS score 
+                SELECT TOP @limit c.id, c.article_body, c.reaction_count, c.comment_count, VectorDistance(c.embedding, @vector) AS distance 
                 FROM c 
                 ORDER BY VectorDistance(c.embedding, @vector)
             """
@@ -74,8 +80,10 @@ class HybridSearch:
         print(f"\n{'='*50}\nRESULTS FOR: '{semantic_query}'\n{'='*50}")
         for i, res in enumerate(results):
             # Note: RRF doesn't expose a raw 'score' property in the SELECT clause by default
-            score_display = f" [Score: {res['score']:.4f}]" if 'score' in res else ""
-            print(f"{i+1}. [ID: {res['id']}]{score_display}\n{res['article_body'][:3000]}\n")
+            score_display = f" [Cosine Score: {res['score']:.4f}]" if 'score' in res else ""
+            reaction_count = f"[Reaction_Count: {res['reaction_count']:.4f}]" if 'reaction_count' in res else ""
+            comment_count = f"[Comment_Count: {res['comment_count']:.4f}]" if 'comment_count' in res else ""
+            print(f"{i+1}. [ID: {res['id']}]{score_display}\n{reaction_count}\n{comment_count}\n{res['article_body'][:3000]}\n")
 
         return results
 
@@ -85,5 +93,5 @@ if __name__ == "__main__":
     # Test
     searcher.perform_hybrid_search(
         semantic_query="Dubai real estate market in 2026, property market trends, housing and commercial real estate outlook, investment opportunities, prices, demand, supply, development activity, rental market, off-plan projects, market forecast, United Arab Emirates property sector",
-        required_keywords=["Dubai", "2026"] # keep empty array for pure vector searching.
+        #required_keywords=["Dubai", "2026"] # keep empty array for pure vector searching.
     )

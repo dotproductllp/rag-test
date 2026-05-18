@@ -88,7 +88,7 @@ class CosmosDBUploader:
         with open(file_path, 'rb') as f:
             data = orjson.loads(f.read())
 
-        BATCH_SIZE = 120
+        BATCH_SIZE = 80
 
         for i in tqdm(range(0, len(data), BATCH_SIZE), desc="Uploading"):
             batch = data[i:i+BATCH_SIZE]
